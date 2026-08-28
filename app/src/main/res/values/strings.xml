@@ -1,0 +1,18 @@
+<resources>
+  <string name="app_name">Luzie</string>
+  <string name="accessibility_service_label">
+    Luzie App Locker
+  </string>
+
+  <string name="accessibility_service_description">
+    Detects when a protected application is opened so Luzie can require authentication.
+  </string>
+
+  <string name="accessibility_service_class_name">
+    com.allenrogers6.luzie.locker.LuzieAccessibilityService
+  </string>
+
+  <string name="device_admin_description">
+    Protects Luzie from being disabled or removed.
+  </string>
+</resources>
