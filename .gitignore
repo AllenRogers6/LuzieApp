@@ -88,3 +88,7 @@ Desktop.ini
 *.temp
 
 *.stackdump
+
+.classpath
+.project
+.settings/

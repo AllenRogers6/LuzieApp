@@ -46,6 +46,8 @@ class AppLock : FragmentActivity() {
     companion object {
         const val EXTRA_LOCKED_PACKAGE =
             "locked_package"
+        const val EXTRA_ANTI_UNINSTALL =
+            "anti_uninstall_lock"
 
         private const val TAG =
             "LuzieAppLock"
@@ -54,7 +56,7 @@ class AppLock : FragmentActivity() {
     private lateinit var preferences: AppPreferences
 
     private var lockedPackage: String? = null
-
+    private var antiUninstallLock = false
     private var biometricPrompt: BiometricPrompt? = null
 
     private var biometricAttempted = false
@@ -73,6 +75,14 @@ class AppLock : FragmentActivity() {
             intent.getStringExtra(
                 EXTRA_LOCKED_PACKAGE,
             )
+
+
+        antiUninstallLock =
+          intent.getBooleanExtra(
+              EXTRA_ANTI_UNINSTALL,
+              false,
+          )
+
 
         Log.d(
             TAG,
@@ -315,6 +325,25 @@ class AppLock : FragmentActivity() {
     }
 
     private fun unlock() {
+        if (antiUninstallLock) {
+          Log.d(
+              TAG,
+              "Anti-uninstall PIN authentication succeeded",
+          )
+
+          lifecycleScope.launch {
+              preferences.setAdminDeactivationAuthorized(true)
+
+              finish()
+
+              overridePendingTransition(
+                  0,
+                  0,
+              )
+          }
+
+          return
+      }
 
         val packageName =
             lockedPackage
@@ -327,7 +356,6 @@ class AppLock : FragmentActivity() {
                 }
 
         lifecycleScope.launch {
-
             Log.d(
                 TAG,
                 "Temporarily unlocking: $packageName",
@@ -346,6 +374,7 @@ class AppLock : FragmentActivity() {
         }
     }
 
+    
     override fun onDestroy() {
         Log.d(
             TAG,

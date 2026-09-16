@@ -25,11 +25,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import com.allenrogers6.luzie.ui.home.HomeViewModelFactory
 import android.content.Context
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import androidx.activity.result.contract.ActivityResultContracts
+
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.composable
 
 import androidx.compose.material3.Text
+import androidx.lifecycle.lifecycleScope
 
 import com.allenrogers6.luzie.ui.theme.LuzieTheme
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,13 +52,61 @@ import androidx.activity.enableEdgeToEdge
 import com.allenrogers6.luzie.ui.settings.SettingsScreen
 import com.allenrogers6.luzie.ui.settings.PinChangeScreen
 import com.allenrogers6.luzie.ui.settings.AboutScreen
+import com.allenrogers6.luzie.locker.LuzieDeviceAdminReceiver
+
+
 
 
 class MainActivity : ComponentActivity() {
+    private var deviceAdminActive by mutableStateOf(false)
+
+    private val deviceAdminLauncher =
+            registerForActivityResult(
+                ActivityResultContracts.StartActivityForResult()
+            ) {
+
+                val dpm = getSystemService(DevicePolicyManager::class.java)
+
+                val admin = ComponentName(
+                    this,
+                    LuzieDeviceAdminReceiver::class.java,
+                )
+
+                if (dpm.isAdminActive(admin)) {
+                    lifecycleScope.launch {
+                        AppPreferences(this@MainActivity)
+                            .setAntiUninstall(true)
+                    }
+                }
+            }
+
+      private fun updateDeviceAdminState() {
+          val dpm =
+              getSystemService(
+                  Context.DEVICE_POLICY_SERVICE
+              ) as DevicePolicyManager
+
+          val admin = ComponentName(
+              this,
+              LuzieDeviceAdminReceiver::class.java,
+          )
+
+          val active = dpm.isAdminActive(admin)
+
+          deviceAdminActive = active
+
+          if (!active) {
+              lifecycleScope.launch {
+                  AppPreferences(this@MainActivity)
+                      .setAntiUninstall(false)
+              }
+          }
+      }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        updateDeviceAdminState()
         enableEdgeToEdge()
 
         setContent {
@@ -87,6 +144,8 @@ class MainActivity : ComponentActivity() {
                         LuzieApp(
                             preferences = preferences,
                             startDestination = "setup",
+                            onRequestDeviceAdmin = { intent -> deviceAdminLauncher.launch(intent) },
+                            deviceAdminActive = deviceAdminActive,
                         )
                     }
 
@@ -94,11 +153,18 @@ class MainActivity : ComponentActivity() {
                         LuzieApp(
                             preferences = preferences,
                             startDestination = "home",
+                            onRequestDeviceAdmin = { intent -> deviceAdminLauncher.launch(intent) },
+
+                            deviceAdminActive = deviceAdminActive,
                         )
                     }
                 }
             }
         }
+    }
+    override fun onResume() {
+            super.onResume()
+            updateDeviceAdminState()
     }
 }
 
@@ -107,6 +173,8 @@ class MainActivity : ComponentActivity() {
 fun LuzieApp(
     preferences: AppPreferences,
     startDestination: String,
+    onRequestDeviceAdmin: (Intent) -> Unit,
+    deviceAdminActive: Boolean,
 ) {
     val navController = rememberNavController()
 
@@ -163,12 +231,17 @@ fun LuzieApp(
                   initialValue = false,
               )
 
-          val antiUninstallEnabled by
+            val antiUninstallPreference by
                 preferences
                     .isAntiUninstall
                     .collectAsStateWithLifecycle(
                         initialValue = false
-                    ) 
+                    )
+
+            val antiUninstallEnabled =
+                antiUninstallPreference && deviceAdminActive
+          
+
           val context = LocalContext.current
 
           SettingsScreen(
@@ -202,14 +275,41 @@ fun LuzieApp(
                 }
               },
               onAntiUninstall = { enabled ->
-                scope.launch {
+                  if (enabled) {
+                      val dpm = context.getSystemService(DevicePolicyManager::class.java)
 
-                        preferences
-                            .setAntiUninstall(
-                                enabled
-                            )
-                    }
+                      val admin = ComponentName(
+                          context,
+                          LuzieDeviceAdminReceiver::class.java,
+                      )
+
+                      if (dpm.isAdminActive(admin)) {
+                          scope.launch {
+                              preferences.setAntiUninstall(true)
+                          }
+                      } else {
+                          val intent = Intent(
+                              DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN,
+                          ).apply {
+                              putExtra(
+                                  DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                                  admin,
+                              )
+
+                              putExtra(
+                                  DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                                  "Luzie anti-uninstall requires Device Admin protection.",
+                              )
+                          }
+                          onRequestDeviceAdmin(intent)
+                      }
+                  } else {
+                      scope.launch {
+                          preferences.setAntiUninstall(false)
+                      }
+                  }
               },
+
               onAbout = {
                   navController.navigate("about")
               },

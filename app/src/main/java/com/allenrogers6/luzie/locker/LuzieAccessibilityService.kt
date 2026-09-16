@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,29 +51,12 @@ class AppMonitorService : AccessibilityService() {
             return
         }
 
-        if (
-            event.eventType !=
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-        ) {
-            return
-        }
+        val packageName = event.packageName?.toString() ?: return
 
-        val packageName =
-            event.packageName
-                ?.toString()
-                ?: return
-
-        if (
-            packageName ==
-            applicationContext.packageName
-        ) {
-            return
-        }
-
-        if (
-            packageName == SETTINGS_PACKAGE
-        ) {
-            handleDeviceAdminSettings()
+        if (packageName == SETTINGS_PACKAGE) {
+            serviceScope.launch {
+                handleDeviceAdminConfirmation()
+            }
             return
         }
 
@@ -132,25 +116,93 @@ class AppMonitorService : AccessibilityService() {
         startActivity(intent)
     }
 
-    private fun handleDeviceAdminSettings() {
-        if (
-            antiUninstallScreenDetected
-        ) {
+    private fun collectAccessibilityText(node: AccessibilityNodeInfo): List<String> {
+        val result = mutableListOf<String>()
+
+        node.text?.toString()?.let {
+            if (it.isNotBlank()) result += it
+        }
+
+        node.contentDescription?.toString()?.let {
+            if (it.isNotBlank()) result += it
+        }
+
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { child ->
+                result += collectAccessibilityText(child)
+                child.recycle()
+            }
+        }
+
+        return result
+    }
+
+    private fun isLuzieDisableConfirmationDialog(): Boolean {
+        val root = rootInActiveWindow ?: return false
+
+        val text = collectAccessibilityText(root)
+
+        val hasLuzieWarning =
+            text.any {
+                it.contains("Luzie anti-uninstall", ignoreCase = true)
+            }
+
+        val hasConfirmationButton =
+            text.any {
+                it.equals("OK", ignoreCase = true) ||
+                    it.equals("Deactivate", ignoreCase = true)
+            }
+
+        return hasLuzieWarning && hasConfirmationButton
+    }
+
+    private suspend fun handleDeviceAdminConfirmation() {
+        if (!isLuzieDeviceAdmin(applicationContext)) return
+
+        if (!preferences.adminDisableAttempt.first()) return
+
+        if (!isLuzieDisableConfirmationDialog()) return
+
+        val authorized =
+            preferences
+                .adminDeactivationAuthorized
+                .first()
+
+        if (authorized) {
+            Log.d(
+                TAG,
+                "Deactivation attempt already authorized",
+            )
             return
         }
 
-        CoroutineScope(
-            Dispatchers.Main,
-        ).launch {
-            val enabled =
+        Log.d(
+            TAG,
+            "Luzie admin deactivation confirmation detected",
+        )
+
+        launchAntiUninstallLock()
+    }
+
+    private fun handleDeviceAdminSettings() {
+        if (antiUninstallScreenDetected) {
+            return
+        }
+
+        serviceScope.launch {
+            val antiUninstallEnabled =
                 preferences
                     .isAntiUninstall
                     .first()
 
-            if (!enabled) {
+            if (!antiUninstallEnabled) {
                 return@launch
             }
 
+        /*
+         * Only intervene while Luzie is actually an
+         * active Device Administrator.
+         */
             if (
                 !isLuzieDeviceAdmin(
                     applicationContext,
@@ -159,27 +211,74 @@ class AppMonitorService : AccessibilityService() {
                 return@launch
             }
 
-            if (
-                !isDeviceAdminDeactivationScreen()
-            ) {
+        /*
+         * IMPORTANT:
+         *
+         * We are in the Android Settings app, but that
+         * does NOT mean we're on the Device Admin page.
+         */
+            if (!isLuzieDeactivationScreen()) {
                 return@launch
             }
 
-            antiUninstallScreenDetected =
-                true
+            antiUninstallScreenDetected = true
 
             Log.d(
                 TAG,
-                "Blocking Device Admin deactivation flow",
+                "Luzie Device Admin deactivation screen detected",
             )
 
+        /*
+         * Leave the deactivation screen before launching
+         * our authentication activity.
+         */
             performGlobalAction(
                 GLOBAL_ACTION_BACK,
             )
 
-            kotlinx.coroutines.delay(150)
+            delay(150)
 
             launchAntiUninstallLock()
+        }
+    }
+
+    private fun isLuzieDeactivationScreen(): Boolean {
+        val root =
+            rootInActiveWindow
+                ?: return false
+
+    /*
+     * First verify that the Settings hierarchy
+     * actually contains Luzie.
+     */
+        val luzieNodes =
+            root.findAccessibilityNodeInfosByText(
+                "Luzie",
+            )
+
+        if (luzieNodes.isEmpty()) {
+            return false
+        }
+
+    /*
+     * Then look for deactivation-specific text.
+     *
+     * Do NOT treat generic "Battery", "App battery usage",
+     * "Allow background usage", etc. as a match.
+     */
+        val deactivateTexts =
+            listOf(
+                "Deactivate",
+                "Deactivate this device admin app",
+                "Deactivate admin",
+                "Turn off device administrator",
+            )
+
+        return deactivateTexts.any { text ->
+            root
+                .findAccessibilityNodeInfosByText(
+                    text,
+                ).isNotEmpty()
         }
     }
 
@@ -240,23 +339,22 @@ class AppMonitorService : AccessibilityService() {
     }
 
     private fun launchAntiUninstallLock() {
-        Log.d(
-            TAG,
-            "Launching AntiUninstallLockActivity",
-        )
-
         val intent =
             Intent(
-                this,
-                AntiUninstallLockActivity::class.java,
+                applicationContext,
+                AppLock::class.java,
             ).apply {
+                putExtra(
+                    AppLock.EXTRA_ANTI_UNINSTALL,
+                    true,
+                )
+
                 addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                    Intent.FLAG_ACTIVITY_NEW_TASK,
                 )
             }
 
-        startActivity(intent)
+        applicationContext.startActivity(intent)
     }
 
     override fun onInterrupt() {

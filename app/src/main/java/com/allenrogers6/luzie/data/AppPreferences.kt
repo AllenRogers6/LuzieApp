@@ -43,6 +43,12 @@ private object PreferencesKeys {
 
     val IS_BIOMETRICS_ENABLED =
         booleanPreferencesKey("biometrics_enabled")
+
+    val ADMIN_DISABLE_ATTEMPT =
+        booleanPreferencesKey("admin_disable_attempt")
+
+    val ADMIN_DEACTIVATION_AUTHORIZED =
+        booleanPreferencesKey("admin_deactivation_authorized")
 }
 
 class AppPreferences(
@@ -95,6 +101,18 @@ class AppPreferences(
         context.dataStore.data.map { preferences ->
             preferences[PreferencesKeys.IS_BIOMETRICS_ENABLED] ?: false
         }
+
+    val adminDisableAttempt: Flow<Boolean>
+        get() =
+            context.dataStore.data.map { prefs ->
+                prefs[PreferencesKeys.ADMIN_DISABLE_ATTEMPT] ?: false
+            }
+
+    val adminDeactivationAuthorized: Flow<Boolean>
+        get() =
+            context.dataStore.data.map { prefs ->
+                prefs[PreferencesKeys.ADMIN_DEACTIVATION_AUTHORIZED] ?: false
+            }
 
     suspend fun setSetupComplete(complete: Boolean) {
         context.dataStore.edit { preferences ->
@@ -176,6 +194,18 @@ class AppPreferences(
     suspend fun setBiometricsEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_BIOMETRICS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setAdminDisableAttempt(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.ADMIN_DISABLE_ATTEMPT] = enabled
+        }
+    }
+
+    suspend fun setAdminDeactivationAuthorized(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.ADMIN_DEACTIVATION_AUTHORIZED] = enabled
         }
     }
 }

@@ -43,39 +43,19 @@ class LuzieDeviceAdminReceiver : DeviceAdminReceiver() {
         context: Context,
         intent: Intent,
     ): CharSequence {
-        Log.d(
-            TAG,
-            "Device Admin disable requested",
-        )
+        CoroutineScope(Dispatchers.IO).launch {
+            AppPreferences(context).setAdminDisableAttempt(true)
+        }
 
-        return "Luzie Anti-Uninstall is enabled. Disable Anti-Uninstall from Luzie before removing protection."
+        return "Luzie anti-uninstall is enabled. Disable anti-uninstall from Luzie before removing protection."
     }
 
     override fun onDisabled(
         context: Context,
         intent: Intent,
     ) {
-        super.onDisabled(
-            context,
-            intent,
-        )
-
-        Log.d(
-            TAG,
-            "Device Admin disabled",
-        )
-
-        val preferences =
-            AppPreferences(
-                context.applicationContext,
-            )
-
-        CoroutineScope(
-            Dispatchers.IO,
-        ).launch {
-            preferences.setAntiUninstall(
-                false,
-            )
+        CoroutineScope(Dispatchers.IO).launch {
+            AppPreferences(context).setAdminDisableAttempt(false)
         }
     }
 }
