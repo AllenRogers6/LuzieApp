@@ -37,6 +37,14 @@ import androidx.compose.runtime.LaunchedEffect
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.TextField
+import androidx.compose.material3.Icon
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.filled.Settings
@@ -129,6 +137,13 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    var searchQuery by rememberSaveable {
+        mutableStateOf("")
+    }
+    val filteredApps = viewModel.apps.filter { app ->
+        app.name.contains(searchQuery, ignoreCase = true) ||
+            app.packageName.contains(searchQuery, ignoreCase = true)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadApps(context)
@@ -169,6 +184,56 @@ fun HomeScreen(
                 }
             }
 
+          TextField(
+              value = searchQuery,
+              onValueChange = {
+                  searchQuery = it
+              },
+              modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(
+                      horizontal = 16.dp,
+                      vertical = 8.dp,
+                  ),
+              placeholder = {
+                  Text("Search apps")
+              },
+              leadingIcon = {
+                  Icon(
+                      imageVector = Icons.Default.Search,
+                      contentDescription = "Search",
+                  )
+              },
+              trailingIcon = {
+                  if (searchQuery.isNotEmpty()) {
+                      IconButton(
+                          onClick = {
+                              searchQuery = ""
+                          },
+                      ) {
+                          Icon(
+                              imageVector = Icons.Default.Close,
+                              contentDescription = "Clear search",
+                          )
+                      }
+                  }
+              },
+              singleLine = true,
+              shape = RoundedCornerShape(20.dp),
+              colors = TextFieldDefaults.colors(
+                  focusedContainerColor =
+                      MaterialTheme.colorScheme.surfaceVariant,
+                  unfocusedContainerColor =
+                      MaterialTheme.colorScheme.surfaceVariant,
+                  focusedIndicatorColor =
+                      Color.Transparent,
+                  unfocusedIndicatorColor =
+                      Color.Transparent,
+              ),
+          )
+            
+            
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -183,7 +248,7 @@ fun HomeScreen(
                     Arrangement.spacedBy(8.dp),
             ) {
                 items(
-                    items = viewModel.apps,
+                    items = filteredApps,
                     key = { app -> app.packageName },
                 ) { app ->
 
